@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 1: Pre-trained ViT and CLIP</title>
+<style>
+:root { --bg:#fbfaf7; --fg:#1d1d1f; --muted:#5b5b60; --rule:#e3e0d8; --accent:#14532d; --accent-soft:#e8f1ea; --card:#ffffff; }
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.65 Georgia, "Iowan Old Style", "Times New Roman", serif; }
+main { max-width:860px; margin:0 auto; padding:56px 20px 80px; }
+header { padding-bottom:8px; }
+.kicker { font:600 13px/1.4 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:0 0 10px; }
+h1 { font-size:38px; line-height:1.15; margin:0 0 14px; letter-spacing:-.01em; }
+.meta { font:15px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--muted); margin:0; }
+.summary { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:26px 0 0; }
+.stat { background:var(--card); border:1px solid var(--rule); border-radius:8px; padding:14px 16px; }
+.stat b { display:block; font:700 26px/1.1 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--accent); }
+.stat span { font:13px/1.4 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--muted); }
+nav { font:15px/1.6 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; margin:24px 0 8px; }
+nav ol { margin:6px 0 0; padding-left:22px; }
+nav a { color:var(--fg); }
+h2 { font-size:27px; line-height:1.25; margin:56px 0 14px; padding-top:18px; border-top:1px solid var(--rule); }
+p, li { max-width:72ch; }
+a { color:var(--accent); }
+code { font:14px/1.4 "SFMono-Regular", Menlo, Consolas, monospace; background:#f0eee8; padding:1px 5px; border-radius:4px; }
+.tablewrap { overflow-x:auto; margin:18px 0 22px; border:1px solid var(--rule); border-radius:8px; background:var(--card); }
+table { border-collapse:collapse; width:100%; font:14px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+th, td { padding:8px 12px; border-bottom:1px solid var(--rule); text-align:left; vertical-align:top; }
+th { background:#f4f2ec; font-weight:600; }
+tr:last-child td { border-bottom:0; }
+
+figure { margin:26px 0; }
+figure img { display:block; width:100%; height:auto; border:1px solid var(--rule); border-radius:6px; background:#fff; }
+figcaption { font:14px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--muted); margin-top:8px; }
+.eq { margin:18px 0 22px; overflow-x:auto; }
+.eq img { display:block; margin:0 auto; max-width:100%; height:auto; }
+footer { margin-top:64px; padding-top:20px; border-top:1px solid var(--rule); font:14px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--muted); }
+@media (max-width:620px) { body { font-size:16px; } h1 { font-size:29px; } main { padding-top:32px; } .summary { grid-template-columns:1fr; } }
+@media print {
+  body { background:#fff; font-size:11.5pt; } main { max-width:none; padding:0; }
+  nav { display:none; } h2 { break-after:avoid; margin-top:28px; }
+  figure, .tablewrap, .eq, .stat { break-inside:avoid; }
+  a { color:inherit; text-decoration:none; }
+  td:not(:first-child), th:not(:first-child) { white-space:normal; }
+  table { font-size:9pt; }
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+<p class="kicker">Multimodal Foundation Models · Project 1</p>
+<h1>Pre-trained Vision and Vision–Language Models: ViT-B/16 and CLIP</h1>
+<p class="meta">Mason · University of Mississippi · October 2026 · Parts 1 and 2</p>
+<div class="summary">
+  <div class="stat"><b>95%</b><span>ViT-B/16 top-1 accuracy (1000-way, 19/20); 100% top-5</span></div>
+  <div class="stat"><b>100%</b><span>CLIP ViT-B/32 zero-shot accuracy, all three prompt templates</span></div>
+  <div class="stat"><b>0.684 vs 0.443</b><span>CLIP image similarity within vs across categories</span></div>
+</div>
+<nav><strong>Contents</strong><ol><li><a href="#setup">Setup</a></li><li><a href="#part-1-task-1-image-patches-and-model-inputs">Part 1, Task 1: Image patches and model inputs</a></li><li><a href="#part-1-task-2-predictions-on-the-collection">Part 1, Task 2: Predictions on the collection</a></li><li><a href="#part-2-task-1-similarity-calculation">Part 2, Task 1: Similarity calculation</a></li><li><a href="#part-2-task-2-prompt-wording">Part 2, Task 2: Prompt wording</a></li><li><a href="#part-2-task-3-the-representation-space">Part 2, Task 3: The representation space</a></li><li><a href="#references">References</a></li></ol></nav>
+</header>
+<h2 id="setup">Setup</h2>
+<p>Code is split into <code>part_1.ipynb</code> (ViT) and <code>part_2.ipynb</code> (CLIP), sharing <code>utils.py</code>. Everything runs with fixed seed 0, and neither model is trained or fine-tuned.</p>
+<p><strong>Images.</strong> 20 images, 4 per category, sampled with a fixed seed from the validation split of <a href="https://github.com/fastai/imagenette">Imagenette</a>, fast.ai's 10-class ImageNet subset (320 px version). They are ImageNet ILSVRC-2012 validation images, used under the ImageNet terms of access (non-commercial research and education). Per-image sources are recorded in <code>image_sources.csv</code>. Because they are validation images, ViT-B/16 was never trained on them. CLIP's training data is not public, so overlap with it cannot be ruled out.</p>
+<p><strong>Label mapping</strong> (exact torchvision label strings):</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>Category</th>
+<th>ImageNet WNID</th>
+<th>torchvision label</th>
+<th>Index</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tench</td>
+<td>n01440764</td>
+<td>tench</td>
+<td>0</td>
+</tr>
+<tr>
+<td>English springer</td>
+<td>n02102040</td>
+<td>English springer</td>
+<td>217</td>
+</tr>
+<tr>
+<td>cassette player</td>
+<td>n02979186</td>
+<td>cassette player</td>
+<td>482</td>
+</tr>
+<tr>
+<td>chain saw</td>
+<td>n03000684</td>
+<td>chain saw</td>
+<td>491</td>
+</tr>
+<tr>
+<td>garbage truck</td>
+<td>n03417042</td>
+<td>garbage truck</td>
+<td>569</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Models and preprocessing.</strong></p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>ViT (Part 1)</th>
+<th>CLIP (Part 2)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Checkpoint</td>
+<td>torchvision <code>vit_b_16</code>, <code>ViT_B_16_Weights.IMAGENET1K_V1</code></td>
+<td>OpenAI CLIP <code>ViT-B/32</code>, <code>jit=False</code>, cast to fp32</td>
+</tr>
+<tr>
+<td>Preprocessing</td>
+<td><code>weights.transforms()</code>: resize 256 (bilinear), center crop 224, ImageNet mean/std</td>
+<td><code>clip.load</code> transform: resize 224 (bicubic), center crop 224, CLIP mean/std</td>
+</tr>
+<tr>
+<td>Learned logit scale exp(t)</td>
+<td>—</td>
+<td>100.0</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Environment.</strong> Google Colab with an NVIDIA Tesla T4 (CUDA). Python 3.13.16, torch 2.11.0+cu130, torchvision 0.26.0+cu130, OpenAI <code>clip</code> 1.0, numpy 2.1.3, pandas 2.2.3, matplotlib 3.10.0, seed 0. Model outputs and embeddings are cached to disk, so each encoder runs once.</p>
+<figure><a href="collection.jpg"><img src="collection.jpg" alt="The 20-image collection, grouped by category" loading="lazy"></a><figcaption>The 20-image collection, grouped by category</figcaption></figure>
+<h2 id="part-1-task-1-image-patches-and-model-inputs">Part 1, Task 1: Image patches and model inputs</h2>
+<p>A 224 × 224 image cut into 16 × 16 patches gives <strong>196 patches</strong>. Adding the CLS token makes the sequence <strong>197 tokens</strong> long. I confirmed both inside the real model: the patch projection outputs (1, 196, 768), and a forward hook on the encoder captures an input of (1, 197, 768).</p>
+<div class="eq"><img src="eq1.svg" alt="N = \frac{H}{P}\cdot\frac{W}{P} = \frac{224}{16}\cdot\frac{224}{16} = 14 \cdot 14 = 196, \qquad L = N + 1 = 197"></div>
+<p>My <code>patchify(img, p)</code> function uses <code>Tensor.unfold</code> twice to cut a (C, H, W) tensor into non-overlapping p × p blocks. It returns them as an (N, C, p, p) tensor in row-major order, the same order in which the ViT flattens its 14 × 14 grid. Each patch holds 3 · 16 · 16 = 768 raw values.</p>
+<figure><a href="p1_patches.jpg"><img src="p1_patches.jpg" alt="Left: tench_1 after resize 256 and center crop 224, with the 16 px grid. Right: the same image as 196 separated patches." loading="lazy"></a><figcaption>Left: tench_1 after resize 256 and center crop 224, with the 16 px grid. Right: the same image as 196 separated patches.</figcaption></figure>
+<p><strong>Patch projection.</strong> Each flattened 768-value patch x<sub>i</sub> is mapped to a D = 768 token by one learned linear map shared across all patches. torchvision implements this as a 16 × 16 convolution with stride 16 (<code>conv_proj</code>), which is the same operation. The transformer never sees pixels directly, only these learned embeddings.</p>
+<div class="eq"><img src="eq2.svg" alt="z_i = E\,x_i + b, \qquad E \in \mathbb{R}^{768 \times 768}"></div>
+<p><strong>Positional embeddings.</strong> Self-attention treats its input as an unordered set, so shuffling the patches would give the same output. A learned vector per position (shape 197 × 768) is added to each token so the model knows where each patch came from.</p>
+<figure><a href="p1_pos_embedding_similarity.png"><img src="p1_pos_embedding_similarity.png" alt="Cosine similarity of each patch position's learned positional embedding to all 14 × 14 positions" loading="lazy"></a><figcaption>Cosine similarity of each patch position's learned positional embedding to all 14 × 14 positions</figcaption></figure>
+<p>Each tile is brightest along its own row and its own column (a cross pattern), and the cross moves with the tile's position across the grid. The 1-D sequence of learned vectors therefore encodes the image's 2-D row and column layout, which the model learned from data rather than having built in.</p>
+<p><strong>CLS token.</strong> A learned vector is prepended to the 196 patch tokens. It carries no image content of its own. Through 12 layers of attention it gathers information from every patch, and its final state goes to the classification head (768 → 1000 logits), giving one fixed-size summary of the whole image.</p>
+<div class="eq"><img src="eq3.svg" alt="z_0 = [\,x_{\text{cls}};\; E x_1;\; \dots;\; E x_{196}\,] + E_{\text{pos}}, \qquad \hat{y} = \text{Head}(\text{LN}(z^{12}_{\text{cls}}))"></div>
+<p><strong>My patches vs. the learned projection.</strong> My function only cuts and rearranges pixels. It has no parameters, learns nothing, and its output is still pixel values. The model's projection multiplies each patch by 768 learned filters and outputs a 768-dimensional feature vector that is no longer an image. To connect the two, I flattened my patches of the normalized input and applied <code>conv_proj</code>'s weights by hand. The result matches the model's own tokens to floating-point precision (max absolute difference 2.6 × 10⁻⁶), so my patch order and flattening match the model's. The figure below shows the top principal components of the learned filters. As in Fig. 7 of Dosovitskiy et al. (2021), they look like smooth color blobs and low-frequency basis functions, a structure learned in training that my pixel crops do not have.</p>
+<figure><a href="p1_projection_filters.png"><img src="p1_projection_filters.png" alt="Top 28 principal components of ViT-B/16's learned 16 × 16 patch-projection filters" loading="lazy"></a><figcaption>Top 28 principal components of ViT-B/16's learned 16 × 16 patch-projection filters</figcaption></figure>
+<h2 id="part-1-task-2-predictions-on-the-collection">Part 1, Task 2: Predictions on the collection</h2>
+<p>ViT-B/16 gets <strong>19 of 20 images right: 95% top-1 accuracy</strong> (1000-way) and <strong>100% top-5</strong>. The one miss is a cassette player predicted as "CD player". Taking the argmax over only our five categories' logits gives 100%.</p>
+<p>Top-five predictions (softmax probability over all 1000 classes; bold marks the true class):</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>Image</th>
+<th>Top-1</th>
+<th>Top-2</th>
+<th>Top-3</th>
+<th>Top-4</th>
+<th>Top-5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tench_1</td>
+<td><strong>tench (0.896)</strong></td>
+<td>barracouta (0.001)</td>
+<td>gar (0.000)</td>
+<td>sturgeon (0.000)</td>
+<td>goldfish (0.000)</td>
+</tr>
+<tr>
+<td>tench_2</td>
+<td><strong>tench (0.850)</strong></td>
+<td>barracouta (0.002)</td>
+<td>monarch (0.001)</td>
+<td>slug (0.000)</td>
+<td>ringlet (0.000)</td>
+</tr>
+<tr>
+<td>tench_3</td>
+<td><strong>tench (0.878)</strong></td>
+<td>barracouta (0.001)</td>
+<td>monarch (0.001)</td>
+<td>sulphur butterfly (0.000)</td>
+<td>goldfish (0.000)</td>
+</tr>
+<tr>
+<td>tench_4</td>
+<td><strong>tench (0.883)</strong></td>
+<td>strainer (0.029)</td>
+<td>coho (0.017)</td>
+<td>reel (0.003)</td>
+<td>sturgeon (0.002)</td>
+</tr>
+<tr>
+<td>English_springer_1</td>
+<td><strong>English springer (0.875)</strong></td>
+<td>clumber (0.009)</td>
+<td>Welsh springer spaniel (0.003)</td>
+<td>English setter (0.003)</td>
+<td>Saint Bernard (0.002)</td>
+</tr>
+<tr>
+<td>English_springer_2</td>
+<td><strong>English springer (0.895)</strong></td>
+<td>Brittany spaniel (0.003)</td>
+<td>ashcan (0.002)</td>
+<td>Welsh springer spaniel (0.002)</td>
+<td>pot (0.002)</td>
+</tr>
+<tr>
+<td>English_springer_3</td>
+<td><strong>English springer (0.881)</strong></td>
+<td>carton (0.017)</td>
+<td>Old English sheepdog (0.015)</td>
+<td>Newfoundland (0.011)</td>
+<td>Sussex spaniel (0.010)</td>
+</tr>
+<tr>
+<td>English_springer_4</td>
+<td><strong>English springer (0.683)</strong></td>
+<td>Welsh springer spaniel (0.019)</td>
+<td>Brittany spaniel (0.008)</td>
+<td>Sussex spaniel (0.007)</td>
+<td>cocker spaniel (0.004)</td>
+</tr>
+<tr>
+<td>cassette_player_1</td>
+<td>CD player (0.243) ✗</td>
+<td>tape player (0.221)</td>
+<td><strong>cassette player (0.209)</strong></td>
+<td>radio (0.205)</td>
+<td>cassette (0.007)</td>
+</tr>
+<tr>
+<td>cassette_player_2</td>
+<td><strong>cassette player (0.715)</strong></td>
+<td>tape player (0.140)</td>
+<td>cassette (0.028)</td>
+<td>CD player (0.016)</td>
+<td>radio (0.010)</td>
+</tr>
+<tr>
+<td>cassette_player_3</td>
+<td><strong>cassette player (0.787)</strong></td>
+<td>tape player (0.101)</td>
+<td>CD player (0.026)</td>
+<td>cassette (0.004)</td>
+<td>radio (0.002)</td>
+</tr>
+<tr>
+<td>cassette_player_4</td>
+<td><strong>cassette player (0.402)</strong></td>
+<td>CD player (0.310)</td>
+<td>tape player (0.146)</td>
+<td>cassette (0.004)</td>
+<td>radio (0.001)</td>
+</tr>
+<tr>
+<td>chain_saw_1</td>
+<td><strong>chain saw (0.825)</strong></td>
+<td>toyshop (0.043)</td>
+<td>confectionery (0.005)</td>
+<td>shoe shop (0.004)</td>
+<td>power drill (0.003)</td>
+</tr>
+<tr>
+<td>chain_saw_2</td>
+<td><strong>chain saw (0.774)</strong></td>
+<td>clumber (0.003)</td>
+<td>Bouvier des Flandres (0.003)</td>
+<td>kuvasz (0.003)</td>
+<td>Sealyham terrier (0.002)</td>
+</tr>
+<tr>
+<td>chain_saw_3</td>
+<td><strong>chain saw (0.847)</strong></td>
+<td>hatchet (0.001)</td>
+<td>maze (0.001)</td>
+<td>worm fence (0.001)</td>
+<td>teddy (0.001)</td>
+</tr>
+<tr>
+<td>chain_saw_4</td>
+<td><strong>chain saw (0.867)</strong></td>
+<td>cowboy boot (0.001)</td>
+<td>cowboy hat (0.001)</td>
+<td>standard schnauzer (0.001)</td>
+<td>lumbermill (0.001)</td>
+</tr>
+<tr>
+<td>garbage_truck_1</td>
+<td><strong>garbage truck (0.893)</strong></td>
+<td>snowplow (0.003)</td>
+<td>ashcan (0.001)</td>
+<td>trailer truck (0.000)</td>
+<td>tow truck (0.000)</td>
+</tr>
+<tr>
+<td>garbage_truck_2</td>
+<td><strong>garbage truck (0.893)</strong></td>
+<td>snowplow (0.004)</td>
+<td>motor scooter (0.002)</td>
+<td>tow truck (0.002)</td>
+<td>moped (0.001)</td>
+</tr>
+<tr>
+<td>garbage_truck_3</td>
+<td><strong>garbage truck (0.902)</strong></td>
+<td>trailer truck (0.009)</td>
+<td>moving van (0.003)</td>
+<td>tow truck (0.001)</td>
+<td>crane (0.001)</td>
+</tr>
+<tr>
+<td>garbage_truck_4</td>
+<td><strong>garbage truck (0.763)</strong></td>
+<td>tow truck (0.003)</td>
+<td>beach wagon (0.002)</td>
+<td>pickup (0.002)</td>
+<td>minivan (0.002)</td>
+</tr>
+</tbody>
+</table></div>
+<figure><a href="p1_confusion_matrix.png"><img src="p1_confusion_matrix.png" alt="ViT-B/16 top-1 confusion matrix; the sixth column collects predictions outside our five classes" loading="lazy"></a><figcaption>ViT-B/16 top-1 confusion matrix; the sixth column collects predictions outside our five classes</figcaption></figure>
+<p>The confusion matrix needs a sixth column, "other", because the model chooses among all 1000 ImageNet classes, not just our five. Four rows are a perfect 4/4. The single error sits in the cassette-player row under "other" (CD player), and no image was confused with another of our five categories.</p>
+<figure><a href="p1_predictions_grid.jpg"><img src="p1_predictions_grid.jpg" alt="Top-1 prediction for every image (green = correct, red = wrong)" loading="lazy"></a><figcaption>Top-1 prediction for every image (green = correct, red = wrong)</figcaption></figure>
+<figure><a href="p1_discussion_examples.jpg"><img src="p1_discussion_examples.jpg" alt="Discussion examples with their top-5 probabilities; the green bar is the true class" loading="lazy"></a><figcaption>Discussion examples with their top-5 probabilities; the green bar is the true class</figcaption></figure>
+<p><strong>Successful examples.</strong> <em>garbage_truck_3</em> is the most confident prediction (0.902; runner-up "trailer truck" at 0.009). It shows a full side view of a large, uncluttered garbage truck centered in the frame, a canonical view. <em>tench_1</em> (0.896) is the classic angler "trophy shot" of a man holding the fish toward the camera. All its runners-up are other fish (barracouta, gar, sturgeon), so the model recognizes the object type, not just a person outdoors. Context still matters: in <em>tench_4</em>, a grayscale photo of two fish in a landing net with no person, tench still wins (0.883), but the next guesses are "strainer" and "reel". The net's mesh texture and the fishing context pull in related classes.</p>
+<p><strong>Incorrect and uncertain examples.</strong> <em>cassette_player_1</em> is the only error. Four classes nearly tie: CD player 0.243, tape player 0.221, cassette player 0.209, radio 0.205. The photo is a compact hi-fi unit that physically contains a CD player, a tape deck and a radio, so each of those labels is partly correct, yet a single-label softmax must pick one winner. <em>cassette_player_4</em> is correct but uncertain (0.402 vs CD player 0.310). It is a close-up from above whose most visible part is a lid that looks like a CD drive's. Both cases come from ImageNet's fine-grained, overlapping electronics classes rather than a failure to recognize the object. The lowest-confidence dog, <em>English_springer_4</em> (0.683), shows two dogs in a pool with a club logo printed on the image. Its alternatives are all spaniel breeds, another fine-grained neighborhood.</p>
+<p><strong>Limits of a fixed label set.</strong> The head is a fixed linear layer onto exactly 1000 ImageNet classes, so every answer is one of those labels, with probabilities summing to 1 across them. The model cannot say "none of these," name a new category (e.g. "leaf blower" or "recycling truck" if absent), or answer anything that isn't "which of the 1000 classes?". It cannot handle attributes, counts, actions or relations ("is the dog wet?", "how many fish?", "is the person holding the chain saw?"), or multiple objects, since softmax forces one winner. Our own error shows this: cassette_player_1 is a CD player, tape player, cassette player and radio at once, but the head can return only one. It also cannot change granularity: "dog" vs "springer" depends on how ImageNet happened to define its classes. Asking a new question requires new labeled data and retraining or replacing the head. CLIP in Part 2 lifts this by matching against arbitrary text.</p>
+<h2 id="part-2-task-1-similarity-calculation">Part 2, Task 1: Similarity calculation</h2>
+<p>My hand-written pipeline reproduces CLIP's built-in <code>logits_per_image</code> up to floating-point error (max absolute difference 1.6 × 10⁻⁵ on logits of about 10–35, i.e. float32 rounding; <code>allclose</code> with atol 1e-3 is True). Predictions are identical, and <code>logits_per_text</code> is exactly its transpose. With the template "a photo of a {}", zero-shot accuracy is <strong>100% (20/20)</strong>.</p>
+<p>The image and text encoders each output a 512-d vector: u for the image and v<sub>j</sub> for each candidate text. I implemented four steps:</p>
+<ol>
+<li><strong>L2 normalization:</strong> divide each embedding by its length so every vector lies on the unit sphere.</li>
+<li><strong>Cosine similarity matrix:</strong> with unit vectors, the dot product is the cosine. Computing it for all pairs gives an (images × texts) matrix with values in [−1, 1].</li>
+<li><strong>Logits:</strong> multiply by the checkpoint's learned temperature exp(t) = 100.0 (t = ln 100, CLIP's trained maximum).</li>
+<li><strong>Softmax and prediction:</strong> softmax across the candidate texts for each image, then take the argmax as the predicted category.</li>
+</ol>
+<div class="eq"><img src="eq4.svg" alt="\hat{u}=\frac{u}{\lVert u\rVert_2},\quad \hat{v}_j=\frac{v_j}{\lVert v_j\rVert_2},\quad s_{j}=\hat{u}^{\top}\hat{v}_j,\quad \ell_{j}=e^{t}\,s_{j},\quad p_{j}=\frac{e^{\ell_{j}}}{\sum_{k=1}^{K} e^{\ell_{k}}}"></div>
+<figure><a href="p2_similarity_heatmaps.png"><img src="p2_similarity_heatmaps.png" alt="Two images per category × five prompts, shown as cosine similarity, logits (100 × cosine) and softmax probabilities" loading="lazy"></a><figcaption>Two images per category × five prompts, shown as cosine similarity, logits (100 × cosine) and softmax probabilities</figcaption></figure>
+<p><strong>Cosine vs. logits vs. probabilities.</strong> Cosine similarity is an absolute, per-pair score of how aligned an image and a text are. For CLIP the values fall in a narrow band. In the subset, correct pairs score 0.22–0.35 and wrong pairs 0.12–0.22, so the right answer can lead by only a few hundredths: chain_saw_1 scores 0.217 with its own prompt vs 0.178 for "cassette player". Logits are the same numbers times 100. The ranking is unchanged, but chain_saw_1's 0.039 cosine gap becomes a 3.9-logit gap (21.7 vs 17.8), which softmax turns into 0.98 vs 0.02. The model learned this scale in contrastive training to make the softmax sharp. Probabilities are the softmax over the logits. They are relative: each row sums to 1 across the candidates given, and they say which candidate wins and by how much, not how well the image matches in an absolute sense.</p>
+<p><strong>Why probabilities depend on the candidate set.</strong> The softmax denominator sums over whatever texts are supplied. Adding, removing or rewording a candidate changes every probability in the row, even though the image-to-true-text cosine stays the same. My test on one image:</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>Candidate texts ("a photo of a …")</th>
+<th>cos(image, true text)</th>
+<th>P(true text)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>the 5 categories</td>
+<td>0.3051</td>
+<td>1.000</td>
+</tr>
+<tr>
+<td>English springer + tench only</td>
+<td>0.3051</td>
+<td>1.000</td>
+</tr>
+<tr>
+<td>the 5 categories + "dog"</td>
+<td>0.3051</td>
+<td>0.989</td>
+</tr>
+</tbody>
+</table></div>
+<p>The image is English_springer_1. Its cosine with the true text is identical in every row; only the softmax probability changes. With the original candidates the probability saturates at 1.000 because the other four texts are far away. Adding "dog", which also correctly describes this image, takes about 1% of the mass. If the candidate list included many dog breeds, the probability would drop much further without the image or the springer text changing at all. A high probability means "best among these options," not an absolute confidence that the image is a springer.</p>
+<h2 id="part-2-task-2-prompt-wording">Part 2, Task 2: Prompt wording</h2>
+<p>All three templates reach <strong>100% accuracy (20/20)</strong>, and no single prediction changes with wording. Wording does change the scores: the mean cosine with the true class rises from 0.281 (bare name) to 0.296 ("a photo of a") to 0.307 ("an image showing a").</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>Template</th>
+<th>Accuracy</th>
+<th>Mean P(true class)</th>
+<th>Mean cosine (true class)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{category}</code></td>
+<td>100%</td>
+<td>0.990</td>
+<td>0.281</td>
+</tr>
+<tr>
+<td><code>a photo of a {category}</code></td>
+<td>100%</td>
+<td>0.995</td>
+<td>0.296</td>
+</tr>
+<tr>
+<td><code>an image showing a {category}</code></td>
+<td>100%</td>
+<td>0.995</td>
+<td>0.307</td>
+</tr>
+</tbody>
+</table></div>
+<figure><a href="p2_prompt_confusion_matrices.png"><img src="p2_prompt_confusion_matrices.png" alt="Confusion matrix for each prompt template; all three are perfectly diagonal" loading="lazy"></a><figcaption>Confusion matrix for each prompt template; all three are perfectly diagonal</figcaption></figure>
+<p>Since no prediction flips, the examples below show the largest changes in the true-class probability:</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>Image</th>
+<th>P(true): <code>{}</code></th>
+<th>P(true): "a photo of a"</th>
+<th>P(true): "an image showing a"</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>chain_saw_1</td>
+<td>0.921</td>
+<td>0.976</td>
+<td>0.954</td>
+</tr>
+<tr>
+<td>chain_saw_4</td>
+<td>0.922</td>
+<td>0.931</td>
+<td>0.961</td>
+</tr>
+<tr>
+<td>English_springer_3</td>
+<td>0.980</td>
+<td>0.997</td>
+<td>0.993</td>
+</tr>
+<tr>
+<td>cassette_player_4</td>
+<td>0.984</td>
+<td>0.993</td>
+<td>0.997</td>
+</tr>
+</tbody>
+</table></div>
+<figure><a href="p2_prompt_examples.jpg"><img src="p2_prompt_examples.jpg" alt="Per-template probabilities over the five categories for the images most affected by wording" loading="lazy"></a><figcaption>Per-template probabilities over the five categories for the images most affected by wording</figcaption></figure>
+<p>The bare category name gives the lowest probability on all four of these images. Neither full-sentence template wins everywhere: "a photo of a" is best for chain_saw_1 and English_springer_3, and "an image showing a" for chain_saw_4 and cassette_player_4. The hardest images are cluttered ones, such as chain_saw_1 (two people holding chain saws in a busy radio studio) and English_springer_3 (a puppy half-hidden in a cardboard box). Wording shifts their scores the most.</p>
+<p><strong>Why wording matters.</strong> CLIP was trained on internet alt-text, where a bare word like "tench" or "chain saw" rarely appears alone, while captions like "a photo of a …" are common. A full sentence moves the text embedding closer to where real captions sit. It also disambiguates rare or polysemous words: "tench" is an obscure fish name, and "English springer" alone does not say <em>dog</em>. Our numbers fit this. Both sentence templates raise the true-class cosine on average and help most on the hardest images. The effect stays small here only because our five categories look very different from each other; with visually similar classes, a shift of a few hundredths in cosine can flip predictions.</p>
+<p><strong>Prompting vs. fine-tuning.</strong> Every template runs through the same frozen weights. Changing the prompt only changes the <em>input</em> to the text encoder, which produces different class vectors (the text embeddings act as the weights of a zero-shot classifier). Nothing the model learned is altered; it needs no labeled data or gradients, and it can be undone instantly. Fine-tuning runs gradient descent on labeled examples and changes the parameters themselves. That changes how every image and text is encoded, which can improve this task while hurting others, and it needs data and compute.</p>
+<p><strong>Comparison with Part 1.</strong></p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Candidate labels</th>
+<th>Top-1 accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ViT-B/16, ImageNet-1k supervised</td>
+<td>1000 ImageNet classes</td>
+<td>95%</td>
+</tr>
+<tr>
+<td>ViT-B/16, argmax over our 5 classes only</td>
+<td>5</td>
+<td>100%</td>
+</tr>
+<tr>
+<td>CLIP ViT-B/32 zero-shot, <code>{}</code></td>
+<td>5 prompts</td>
+<td>100%</td>
+</tr>
+<tr>
+<td>CLIP ViT-B/32 zero-shot, "a photo of a {}"</td>
+<td>5 prompts</td>
+<td>100%</td>
+</tr>
+<tr>
+<td>CLIP ViT-B/32 zero-shot, "an image showing a {}"</td>
+<td>5 prompts</td>
+<td>100%</td>
+</tr>
+</tbody>
+</table></div>
+<p>When both models choose among the same five categories, both get every image right. ViT's one 1000-way error came from its label set containing near-synonyms (CD player, tape player, radio) that CLIP was never asked to choose between. Had we added those texts to CLIP's candidates, it might face the same ambiguity; we did not test this.</p>
+<p>The numbers are still not directly comparable. ViT-B/16 was trained with supervised cross-entropy on the 1.28M labeled ImageNet images. CLIP ViT-B/32 was trained contrastively on 400M web image–caption pairs, and its zero-shot candidates here are only 5 prompts, a much easier forced choice. The models also use different patch sizes (16 vs 32). With 20 easy, visually distinct images, both are at or near ceiling, and one image equals 5 percentage points. This experiment cannot show that either model is generally better.</p>
+<h2 id="part-2-task-3-the-representation-space">Part 2, Task 3: The representation space</h2>
+<p>Normalized CLIP image embeddings are much more similar within a category (mean 0.684) than across categories (mean 0.443), so the five categories form clear blocks. Category is not the whole story, though. The most similar cross-category pair (0.593) beats the least similar same-category pair (0.504), and composition, scene and color all leave visible traces.</p>
+<p>The matrix is computed exactly as in Task 1, with images in place of texts:</p>
+<div class="eq"><img src="eq5.svg" alt="S = \hat{U}\,\hat{U}^{\top}, \qquad S_{ab} = \hat{u}_a^{\top}\hat{u}_b"></div>
+<figure><a href="p2_image_image_similarity.png"><img src="p2_image_image_similarity.png" alt="CLIP image–image cosine similarity for all 20 images, grouped by category; lines mark category boundaries" loading="lazy"></a><figcaption>CLIP image–image cosine similarity for all 20 images, grouped by category; lines mark category boundaries</figcaption></figure>
+<p>Mean similarity between category blocks (the diagonal excludes each image's similarity with itself):</p>
+<div class="tablewrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>tench</th>
+<th>English springer</th>
+<th>cassette player</th>
+<th>chain saw</th>
+<th>garbage truck</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>tench</strong></td>
+<td><strong>0.695</strong></td>
+<td>0.453</td>
+<td>0.378</td>
+<td>0.481</td>
+<td>0.374</td>
+</tr>
+<tr>
+<td><strong>English springer</strong></td>
+<td>0.453</td>
+<td><strong>0.689</strong></td>
+<td>0.420</td>
+<td>0.516</td>
+<td>0.430</td>
+</tr>
+<tr>
+<td><strong>cassette player</strong></td>
+<td>0.378</td>
+<td>0.420</td>
+<td><strong>0.737</strong></td>
+<td>0.461</td>
+<td>0.422</td>
+</tr>
+<tr>
+<td><strong>chain saw</strong></td>
+<td>0.481</td>
+<td>0.516</td>
+<td>0.461</td>
+<td><strong>0.629</strong></td>
+<td>0.492</td>
+</tr>
+<tr>
+<td><strong>garbage truck</strong></td>
+<td>0.374</td>
+<td>0.430</td>
+<td>0.422</td>
+<td>0.492</td>
+<td><strong>0.668</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Cassette players form the tightest group (0.737) and chain saws the loosest (0.629). Chain saw is also the category most similar to every other one (0.46–0.52 across its row). Its photos show people, grass, wood and indoor clutter, scenes that overlap with the other categories. The most distant pair of categories is tench vs garbage truck (0.374).</p>
+<p><strong>Similar images within a category.</strong></p>
+<figure><a href="p2_pairs_within_top.jpg"><img src="p2_pairs_within_top.jpg" alt="Most similar same-category pairs" loading="lazy"></a><figcaption>Most similar same-category pairs</figcaption></figure>
+<p>The top pair is tench_1 and tench_3 (0.862). Beyond the fish species, they share the whole composition: a man facing the camera, holding the fish horizontally at chest height, outdoors. Next come cassette_player_1 and cassette_player_2 (0.807), two front-facing silver/black panels full of buttons and displays.</p>
+<figure><a href="p2_pairs_within_low.jpg"><img src="p2_pairs_within_low.jpg" alt="Least similar same-category pairs" loading="lazy"></a><figcaption>Least similar same-category pairs</figcaption></figure>
+<p>The least similar same-category pair is chain_saw_1 and chain_saw_2 (0.504). Both contain a chain saw, but one shows two people in a cluttered indoor radio studio and the other a lone worker cutting a stump outdoors. Next is tench_2 vs tench_4 (0.568): a color photo of a person posing with a fish vs a grayscale close-up of two fish in a landing net with no person.</p>
+<p><strong>Unexpectedly similar images across categories.</strong></p>
+<figure><a href="p2_pairs_cross_top.jpg"><img src="p2_pairs_cross_top.jpg" alt="Most similar cross-category pairs" loading="lazy"></a><figcaption>Most similar cross-category pairs</figcaption></figure>
+<p>All four of the top cross-category pairs involve a chain saw image. tench_4 matches chain_saw_3 (0.593) and chain_saw_4 (0.591). The shared property I can see in tench_4 and chain_saw_3 is layout and texture: a dark, elongated object lying on a busy textured surface (net mesh, twig-strewn grass). English_springer_2 matches chain_saw_3 (0.575); both are sunny outdoor scenes on a green lawn. English_springer_1 matches chain_saw_4 (0.581). In chain_saw_4 the man is carving a wooden sculpture, and a dark, animal-shaped figure stands in the background, which may pull it toward the dog images. These explanations are my reading of the images, not something the embedding tells us directly.</p>
+<p><strong>What drives the similarity.</strong> The main object is the strongest factor: every within-category block (0.63–0.74) beats every cross-category block (0.37–0.52). After that, three secondary factors appear in our examples:</p>
+<ol>
+<li><strong>Composition and pose.</strong> A person holding the object toward the camera makes tench_1 and tench_3 nearly identical.</li>
+<li><strong>Scene and background.</strong> An indoor vs outdoor setting splits chain_saw_1 from chain_saw_2, and shared lawns link springer and chain-saw photos.</li>
+<li><strong>Color and rendering.</strong> The grayscale tench_4 is part of the second-least similar tench pair.</li>
+</ol>
+<p><strong>What CLIP's representation captures here.</strong> CLIP's image embedding is organized first by the main object category, which is why zero-shot classification with five distinct categories reached 100%. Because CLIP learned from whole photos paired with captions, the embedding also encodes how the photo looks: the setting, whether people are present and what they are doing, the layout and the color. These cues can make images of different objects fairly close, and images of the same object fairly far apart. This conclusion rests on 20 images, four per category, so it describes these examples, not CLIP in general.</p>
+<h2 id="references">References</h2>
+<ul>
+<li>A. Dosovitskiy et al., "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale," ICLR 2021.</li>
+<li>A. Radford et al., "Learning Transferable Visual Models From Natural Language Supervision" (CLIP), ICML 2021.</li>
+<li>J. Howard, Imagenette dataset, fast.ai, https://github.com/fastai/imagenette.</li>
+<li>O. Russakovsky et al., "ImageNet Large Scale Visual Recognition Challenge," IJCV 2015.</li>
+</ul>
+<footer>Experiments implemented and run by the author in Google Colab. Code is submitted privately and is not published on this page.</footer>
+</main>
+</body>
+</html>
